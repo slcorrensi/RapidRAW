@@ -13,206 +13,277 @@ use rayon::prelude::*;
 pub struct XTransDemosaic {}
 
 impl XTransDemosaic {
-  pub fn new() -> Self {
-    Self {}
-  }
+    pub fn new() -> Self {
+        Self {}
+    }
+
+    // Helper function to interpolate borders
+    fn border_interpolate(border: usize, image: &mut Color2D<f32, 3>, cfa: &CFA) {
+        let colors = 3; // Number of color components (RGB)
+        let mut sum = [0.0; 8]; // Using f32 for summing; adjust size as needed
+
+        for row in 0..image.height {
+            for col in 0..image.width {
+                if col == border && row >= border && row < image.height - border {
+                    continue; // Skip to next iteration for border columns
+                }
+
+                // Reset sum array to zero
+                for item in &mut sum {
+                    *item = 0.0;
+                }
+
+                // Check neighboring pixels
+                let y_start = if row > 0 { row - 1 } else { 0 };
+                let y_end = if row + 1 < image.height {
+                    row + 1
+                } else {
+                    image.height - 1
+                };
+                let x_start = if col > 0 { col - 1 } else { 0 };
+                let x_end = if col + 1 < image.width {
+                    col + 1
+                } else {
+                    image.width - 1
+                };
+
+                for y in y_start..=y_end {
+                    for x in x_start..=x_end {
+                        let color = cfa.color_at(y, x);
+                        for c in 0..colors {
+                            sum[color] += image.data[y * image.width + x][color];
+                            sum[c + 4] += 1.0; // Count occurrences
+                        }
+                    }
+                }
+
+                for c in 0..colors {
+                    if sum[c + colors] > 0.0 && sum[c + 4] != 0.0 {
+                        image.data[row * image.width + col][c] = sum[c] / sum[c + colors];
+                    }
+                }
+            }
+        }
+    }
+
 }
 
 impl Demosaic<f32, 3> for XTransDemosaic {
-  /// Demosaics an X-Trans image to full resolution using a gradient-based method.
-  /// This version is corrected to handle the non-uniform X-Trans CFA pattern,
-  /// avoiding artifacts by correctly identifying and averaging available neighbor pixels.
-  fn demosaic(&self, pixels: &PixF32, cfa: &CFA, _colors: &PlaneColor, roi: Rect) -> Color2D<f32, 3> {
-    let mut out = Color2D::<f32, 3>::new(roi.width(), roi.height());
-    let cfa = cfa.shift(roi.p.x, roi.p.y);
 
-    // Pass 1: Copy known sensor values into the correct channels of the output buffer.
-    for y in 0..roi.height() {
-      for x in 0..roi.width() {
-        let color_idx = cfa.color_at(y, x);
-        if color_idx < 3 {
-          // Ensure we only handle R, G, B
-          out.at_mut(y, x)[color_idx] = *pixels.at(roi.p.y + y, roi.p.x + x);
-        }
-      }
+    /// Frank Markesteijn's algorithm for Fuji X-Trans sensors
+    fn demosaic(&self, pixels: &PixF32, cfa: &CFA, _colors: &PlaneColor, roi: Rect) -> Color2D<f32, 3> {
+        todo!()
     }
 
-    // Create a padded copy for easier border handling during interpolation
-    let mut padded = out.make_padded(2);
-
-    // Pass 2: Interpolate Green channel at R and B locations using gradient detection.
-    for y in 2..padded.height - 2 {
-      for x in 2..padded.width - 2 {
-        let roi_y = y - 2;
-        let roi_x = x - 2;
-        let color_idx = cfa.color_at(roi_y, roi_x);
-
-        if color_idx == CFA_COLOR_R || color_idx == CFA_COLOR_B {
-          // Gradients of the current color (R or B). In X-Trans, same-colored
-          // neighbors are typically 2 pixels away in cardinal directions.
-          let h_grad = (padded.at(y, x - 2)[color_idx] - padded.at(y, x + 2)[color_idx]).abs();
-          let v_grad = (padded.at(y - 2, x)[color_idx] - padded.at(y + 2, x)[color_idx]).abs();
-
-          let mut g_h_sum = 0.0;
-          let mut g_h_count = 0;
-          let mut g_v_sum = 0.0;
-          let mut g_v_count = 0;
-
-          // Find and sum horizontal Green neighbors
-          if roi_x > 0 && cfa.color_at(roi_y, roi_x - 1) == CFA_COLOR_G {
-            g_h_sum += padded.at(y, x - 1)[CFA_COLOR_G];
-            g_h_count += 1;
-          }
-          if cfa.color_at(roi_y, roi_x + 1) == CFA_COLOR_G {
-            g_h_sum += padded.at(y, x + 1)[CFA_COLOR_G];
-            g_h_count += 1;
-          }
-
-          // Find and sum vertical Green neighbors
-          if roi_y > 0 && cfa.color_at(roi_y - 1, roi_x) == CFA_COLOR_G {
-            g_v_sum += padded.at(y - 1, x)[CFA_COLOR_G];
-            g_v_count += 1;
-          }
-          if cfa.color_at(roi_y + 1, roi_x) == CFA_COLOR_G {
-            g_v_sum += padded.at(y + 1, x)[CFA_COLOR_G];
-            g_v_count += 1;
-          }
-
-          let g_h = if g_h_count > 0 { g_h_sum / g_h_count as f32 } else { 0.0 };
-          let g_v = if g_v_count > 0 { g_v_sum / g_v_count as f32 } else { 0.0 };
-
-          let g = if g_h_count == 0 && g_v_count == 0 {
-            0.0 // Fallback, should not happen for R/B in X-Trans
-          } else if g_h_count == 0 {
-            g_v // Only vertical Gs available
-          } else if g_v_count == 0 {
-            g_h // Only horizontal Gs available
-          } else {
-            // Both horizontal and vertical Gs exist, use gradient to decide.
-            if (h_grad - v_grad).abs() < 0.001 { // Gradients are similar
-              (g_h_sum + g_v_sum) / (g_h_count + g_v_count) as f32
-            } else if h_grad < v_grad { // Horizontal edge
-              g_h
-            } else { // Vertical edge
-              g_v
-            }
-          };
-          padded.at_mut(y, x)[CFA_COLOR_G] = g;
-        }
-      }
-    }
-
-    // Pass 3: Interpolate R/B at G locations
-    for y in 2..padded.height - 2 {
-      for x in 2..padded.width - 2 {
-        let roi_y = y - 2;
-        let roi_x = x - 2;
-        if cfa.color_at(roi_y, roi_x) == CFA_COLOR_G {
-          let mut r_sum = 0.0;
-          let mut r_count = 0;
-          let mut b_sum = 0.0;
-          let mut b_count = 0;
-
-          // Check cardinal neighbors with boundary checks
-          // Left
-          if roi_x > 0 {
-            match cfa.color_at(roi_y, roi_x - 1) {
-              CFA_COLOR_R => { r_sum += padded.at(y, x - 1)[CFA_COLOR_R]; r_count += 1; }
-              CFA_COLOR_B => { b_sum += padded.at(y, x - 1)[CFA_COLOR_B]; b_count += 1; }
-              _ => {}
-            }
-          }
-          // Right
-          match cfa.color_at(roi_y, roi_x + 1) {
-            CFA_COLOR_R => { r_sum += padded.at(y, x + 1)[CFA_COLOR_R]; r_count += 1; }
-            CFA_COLOR_B => { b_sum += padded.at(y, x + 1)[CFA_COLOR_B]; b_count += 1; }
-            _ => {}
-          }
-          // Top
-          if roi_y > 0 {
-            match cfa.color_at(roi_y - 1, roi_x) {
-              CFA_COLOR_R => { r_sum += padded.at(y - 1, x)[CFA_COLOR_R]; r_count += 1; }
-              CFA_COLOR_B => { b_sum += padded.at(y - 1, x)[CFA_COLOR_B]; b_count += 1; }
-              _ => {}
-            }
-          }
-          // Bottom
-          match cfa.color_at(roi_y + 1, roi_x) {
-            CFA_COLOR_R => { r_sum += padded.at(y + 1, x)[CFA_COLOR_R]; r_count += 1; }
-            CFA_COLOR_B => { b_sum += padded.at(y + 1, x)[CFA_COLOR_B]; b_count += 1; }
-            _ => {}
-          }
-
-          if r_count > 0 {
-            padded.at_mut(y, x)[CFA_COLOR_R] = r_sum / r_count as f32;
-          }
-          if b_count > 0 {
-            padded.at_mut(y, x)[CFA_COLOR_B] = b_sum / b_count as f32;
-          }
-        }
-      }
-    }
-
-    // Pass 4: Interpolate R at B and B at R
-    for y in 2..padded.height - 2 {
-      for x in 2..padded.width - 2 {
-        let roi_y = y - 2;
-        let roi_x = x - 2;
-        let color_idx = cfa.color_at(roi_y, roi_x);
-
-        if color_idx == CFA_COLOR_R || color_idx == CFA_COLOR_B {
-          let mut r_sum = 0.0;
-          let mut b_sum = 0.0;
-          let mut g_neighbor_count = 0;
-
-          // Interpolate using diagonal neighbors with boundary checks.
-          // We only use G neighbors, which now have interpolated R and B values from Pass 3.
-          
-          // Top-Left
-          if roi_y > 0 && roi_x > 0 && cfa.color_at(roi_y - 1, roi_x - 1) == CFA_COLOR_G {
-            r_sum += padded.at(y - 1, x - 1)[CFA_COLOR_R];
-            b_sum += padded.at(y - 1, x - 1)[CFA_COLOR_B];
-            g_neighbor_count += 1;
-          }
-          // Top-Right
-          if roi_y > 0 && cfa.color_at(roi_y - 1, roi_x + 1) == CFA_COLOR_G {
-            r_sum += padded.at(y - 1, x + 1)[CFA_COLOR_R];
-            b_sum += padded.at(y - 1, x + 1)[CFA_COLOR_B];
-            g_neighbor_count += 1;
-          }
-          // Bottom-Left
-          if roi_x > 0 && cfa.color_at(roi_y + 1, roi_x - 1) == CFA_COLOR_G {
-            r_sum += padded.at(y + 1, x - 1)[CFA_COLOR_R];
-            b_sum += padded.at(y + 1, x - 1)[CFA_COLOR_B];
-            g_neighbor_count += 1;
-          }
-          // Bottom-Right
-          if cfa.color_at(roi_y + 1, roi_x + 1) == CFA_COLOR_G {
-            r_sum += padded.at(y + 1, x + 1)[CFA_COLOR_R];
-            b_sum += padded.at(y + 1, x + 1)[CFA_COLOR_B];
-            g_neighbor_count += 1;
-          }
-
-          if g_neighbor_count > 0 {
-            if color_idx == CFA_COLOR_B {
-              // Interpolate R at B locations
-              padded.at_mut(y, x)[CFA_COLOR_R] = r_sum / g_neighbor_count as f32;
-            } else { // color_idx == CFA_COLOR_R
-              // Interpolate B at R locations
-              padded.at_mut(y, x)[CFA_COLOR_B] = b_sum / g_neighbor_count as f32;
-            }
-          }
-        }
-      }
-    }
-
-    // Crop the padding off to return the final image
-    padded.crop(Rect::new_with_points(
-      Point::new(2, 2),
-      Point::new(padded.width - 2, padded.height - 2),
-    ))
-  }
 }
+
+
+
+
+
+
+
+
+
+
+
+/////////////////////////////////////////////////
+
+// impl Demosaic<f32, 3> for XTransDemosaic {
+//   /// Demosaics an X-Trans image to full resolution using a gradient-based method.
+//   /// This version is corrected to handle the non-uniform X-Trans CFA pattern,
+//   /// avoiding artifacts by correctly identifying and averaging available neighbor pixels.
+//   fn demosaic(&self, pixels: &PixF32, cfa: &CFA, _colors: &PlaneColor, roi: Rect) -> Color2D<f32, 3> {
+//     let mut out = Color2D::<f32, 3>::new(roi.width(), roi.height());
+//     let cfa = cfa.shift(roi.p.x, roi.p.y);
+
+//     // Pass 1: Copy known sensor values into the correct channels of the output buffer.
+//     for y in 0..roi.height() {
+//       for x in 0..roi.width() {
+//         let color_idx = cfa.color_at(y, x);
+//         if color_idx < 3 {
+//           // Ensure we only handle R, G, B
+//           out.at_mut(y, x)[color_idx] = *pixels.at(roi.p.y + y, roi.p.x + x);
+//         }
+//       }
+//     }
+
+//     // Create a padded copy for easier border handling during interpolation
+//     let mut padded = out.make_padded(2);
+
+//     // Pass 2: Interpolate Green channel at R and B locations using gradient detection.
+//     for y in 2..padded.height - 2 {
+//       for x in 2..padded.width - 2 {
+//         let roi_y = y - 2;
+//         let roi_x = x - 2;
+//         let color_idx = cfa.color_at(roi_y, roi_x);
+
+//         if color_idx == CFA_COLOR_R || color_idx == CFA_COLOR_B {
+//           // Gradients of the current color (R or B). In X-Trans, same-colored
+//           // neighbors are typically 2 pixels away in cardinal directions.
+//           let h_grad = (padded.at(y, x - 2)[color_idx] - padded.at(y, x + 2)[color_idx]).abs();
+//           let v_grad = (padded.at(y - 2, x)[color_idx] - padded.at(y + 2, x)[color_idx]).abs();
+
+//           let mut g_h_sum = 0.0;
+//           let mut g_h_count = 0;
+//           let mut g_v_sum = 0.0;
+//           let mut g_v_count = 0;
+
+//           // Find and sum horizontal Green neighbors
+//           if roi_x > 0 && cfa.color_at(roi_y, roi_x - 1) == CFA_COLOR_G {
+//             g_h_sum += padded.at(y, x - 1)[CFA_COLOR_G];
+//             g_h_count += 1;
+//           }
+//           if cfa.color_at(roi_y, roi_x + 1) == CFA_COLOR_G {
+//             g_h_sum += padded.at(y, x + 1)[CFA_COLOR_G];
+//             g_h_count += 1;
+//           }
+
+//           // Find and sum vertical Green neighbors
+//           if roi_y > 0 && cfa.color_at(roi_y - 1, roi_x) == CFA_COLOR_G {
+//             g_v_sum += padded.at(y - 1, x)[CFA_COLOR_G];
+//             g_v_count += 1;
+//           }
+//           if cfa.color_at(roi_y + 1, roi_x) == CFA_COLOR_G {
+//             g_v_sum += padded.at(y + 1, x)[CFA_COLOR_G];
+//             g_v_count += 1;
+//           }
+
+//           let g_h = if g_h_count > 0 { g_h_sum / g_h_count as f32 } else { 0.0 };
+//           let g_v = if g_v_count > 0 { g_v_sum / g_v_count as f32 } else { 0.0 };
+
+//           let g = if g_h_count == 0 && g_v_count == 0 {
+//             0.0 // Fallback, should not happen for R/B in X-Trans
+//           } else if g_h_count == 0 {
+//             g_v // Only vertical Gs available
+//           } else if g_v_count == 0 {
+//             g_h // Only horizontal Gs available
+//           } else {
+//             // Both horizontal and vertical Gs exist, use gradient to decide.
+//             if (h_grad - v_grad).abs() < 0.001 { // Gradients are similar
+//               (g_h_sum + g_v_sum) / (g_h_count + g_v_count) as f32
+//             } else if h_grad < v_grad { // Horizontal edge
+//               g_h
+//             } else { // Vertical edge
+//               g_v
+//             }
+//           };
+//           padded.at_mut(y, x)[CFA_COLOR_G] = g;
+//         }
+//       }
+//     }
+
+//     // Pass 3: Interpolate R/B at G locations
+//     for y in 2..padded.height - 2 {
+//       for x in 2..padded.width - 2 {
+//         let roi_y = y - 2;
+//         let roi_x = x - 2;
+//         if cfa.color_at(roi_y, roi_x) == CFA_COLOR_G {
+//           let mut r_sum = 0.0;
+//           let mut r_count = 0;
+//           let mut b_sum = 0.0;
+//           let mut b_count = 0;
+
+//           // Check cardinal neighbors with boundary checks
+//           // Left
+//           if roi_x > 0 {
+//             match cfa.color_at(roi_y, roi_x - 1) {
+//               CFA_COLOR_R => { r_sum += padded.at(y, x - 1)[CFA_COLOR_R]; r_count += 1; }
+//               CFA_COLOR_B => { b_sum += padded.at(y, x - 1)[CFA_COLOR_B]; b_count += 1; }
+//               _ => {}
+//             }
+//           }
+//           // Right
+//           match cfa.color_at(roi_y, roi_x + 1) {
+//             CFA_COLOR_R => { r_sum += padded.at(y, x + 1)[CFA_COLOR_R]; r_count += 1; }
+//             CFA_COLOR_B => { b_sum += padded.at(y, x + 1)[CFA_COLOR_B]; b_count += 1; }
+//             _ => {}
+//           }
+//           // Top
+//           if roi_y > 0 {
+//             match cfa.color_at(roi_y - 1, roi_x) {
+//               CFA_COLOR_R => { r_sum += padded.at(y - 1, x)[CFA_COLOR_R]; r_count += 1; }
+//               CFA_COLOR_B => { b_sum += padded.at(y - 1, x)[CFA_COLOR_B]; b_count += 1; }
+//               _ => {}
+//             }
+//           }
+//           // Bottom
+//           match cfa.color_at(roi_y + 1, roi_x) {
+//             CFA_COLOR_R => { r_sum += padded.at(y + 1, x)[CFA_COLOR_R]; r_count += 1; }
+//             CFA_COLOR_B => { b_sum += padded.at(y + 1, x)[CFA_COLOR_B]; b_count += 1; }
+//             _ => {}
+//           }
+
+//           if r_count > 0 {
+//             padded.at_mut(y, x)[CFA_COLOR_R] = r_sum / r_count as f32;
+//           }
+//           if b_count > 0 {
+//             padded.at_mut(y, x)[CFA_COLOR_B] = b_sum / b_count as f32;
+//           }
+//         }
+//       }
+//     }
+
+//     // Pass 4: Interpolate R at B and B at R
+//     for y in 2..padded.height - 2 {
+//       for x in 2..padded.width - 2 {
+//         let roi_y = y - 2;
+//         let roi_x = x - 2;
+//         let color_idx = cfa.color_at(roi_y, roi_x);
+
+//         if color_idx == CFA_COLOR_R || color_idx == CFA_COLOR_B {
+//           let mut r_sum = 0.0;
+//           let mut b_sum = 0.0;
+//           let mut g_neighbor_count = 0;
+
+//           // Interpolate using diagonal neighbors with boundary checks.
+//           // We only use G neighbors, which now have interpolated R and B values from Pass 3.
+          
+//           // Top-Left
+//           if roi_y > 0 && roi_x > 0 && cfa.color_at(roi_y - 1, roi_x - 1) == CFA_COLOR_G {
+//             r_sum += padded.at(y - 1, x - 1)[CFA_COLOR_R];
+//             b_sum += padded.at(y - 1, x - 1)[CFA_COLOR_B];
+//             g_neighbor_count += 1;
+//           }
+//           // Top-Right
+//           if roi_y > 0 && cfa.color_at(roi_y - 1, roi_x + 1) == CFA_COLOR_G {
+//             r_sum += padded.at(y - 1, x + 1)[CFA_COLOR_R];
+//             b_sum += padded.at(y - 1, x + 1)[CFA_COLOR_B];
+//             g_neighbor_count += 1;
+//           }
+//           // Bottom-Left
+//           if roi_x > 0 && cfa.color_at(roi_y + 1, roi_x - 1) == CFA_COLOR_G {
+//             r_sum += padded.at(y + 1, x - 1)[CFA_COLOR_R];
+//             b_sum += padded.at(y + 1, x - 1)[CFA_COLOR_B];
+//             g_neighbor_count += 1;
+//           }
+//           // Bottom-Right
+//           if cfa.color_at(roi_y + 1, roi_x + 1) == CFA_COLOR_G {
+//             r_sum += padded.at(y + 1, x + 1)[CFA_COLOR_R];
+//             b_sum += padded.at(y + 1, x + 1)[CFA_COLOR_B];
+//             g_neighbor_count += 1;
+//           }
+
+//           if g_neighbor_count > 0 {
+//             if color_idx == CFA_COLOR_B {
+//               // Interpolate R at B locations
+//               padded.at_mut(y, x)[CFA_COLOR_R] = r_sum / g_neighbor_count as f32;
+//             } else { // color_idx == CFA_COLOR_R
+//               // Interpolate B at R locations
+//               padded.at_mut(y, x)[CFA_COLOR_B] = b_sum / g_neighbor_count as f32;
+//             }
+//           }
+//         }
+//       }
+//     }
+
+//     // Crop the padding off to return the final image
+//     padded.crop(Rect::new_with_points(
+//       Point::new(2, 2),
+//       Point::new(padded.width - 2, padded.height - 2),
+//     ))
+//   }
+// }
 
 #[derive(Default)]
 pub struct XTransSuperpixelDemosaic {}
