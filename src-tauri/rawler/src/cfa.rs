@@ -166,6 +166,10 @@ impl CFA {
     self.pattern[(row + 48) % 48][(col + 48) % 48] as usize
   }
 
+  pub fn color_at_signed(&self, row: isize, col: isize) -> usize {
+    self.pattern[(row as usize + 48) % 48][(col as usize + 48) % 48] as usize
+  }
+
   /// from inner loops without performance issues.
   pub fn cfa_color_at(&self, row: usize, col: usize) -> CFAColor {
     (self.pattern[(row + 48) % 48][(col + 48) % 48]).try_into().unwrap()
