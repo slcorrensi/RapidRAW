@@ -113,6 +113,19 @@ where
   }
 
   #[inline(always)]
+  pub fn at_signed(&self, row: isize, col: isize) -> &T {
+    debug_assert!(self.initialized);
+    #[cfg(debug_assertions)]
+    {
+      &self.data[row as usize * self.width + col as usize]
+    }
+    #[cfg(not(debug_assertions))]
+    unsafe {
+      self.data.get_unchecked(row as usize * self.width + col as usize)
+    }
+  }
+
+  #[inline(always)]
   pub fn at_mut(&mut self, row: usize, col: usize) -> &mut T {
     debug_assert!(self.initialized);
     #[cfg(debug_assertions)]
@@ -122,6 +135,19 @@ where
     #[cfg(not(debug_assertions))]
     unsafe {
       self.data.get_unchecked_mut(row * self.width + col)
+    }
+  }
+
+  #[inline(always)]
+  pub fn at_mut_signed(&mut self, row: isize, col: isize) -> &mut T {
+    debug_assert!(self.initialized);
+    #[cfg(debug_assertions)]
+    {
+      &mut self.data[row as usize * self.width + col as usize]
+    }
+    #[cfg(not(debug_assertions))]
+    unsafe {
+      self.data.get_unchecked_mut(row as usize * self.width + col as usize)
     }
   }
 
@@ -307,6 +333,18 @@ where
   }
 
   #[inline(always)]
+  pub fn at_signed(&self, row: isize, col: isize) -> &[T; N] {
+    #[cfg(debug_assertions)]
+    {
+      &self.data[row as usize * self.width + col as usize]
+    }
+    #[cfg(not(debug_assertions))]
+    unsafe {
+      self.data.get_unchecked(row as usize * self.width + col as usize)
+    }
+  }
+
+  #[inline(always)]
   pub fn at_mut(&mut self, row: usize, col: usize) -> &mut [T; N] {
     #[cfg(debug_assertions)]
     {
@@ -315,6 +353,18 @@ where
     #[cfg(not(debug_assertions))]
     unsafe {
       self.data.get_unchecked_mut(row * self.width + col)
+    }
+  }
+  
+  #[inline(always)]
+  pub fn at_mut_signed(&mut self, row: isize, col: usize) -> &mut [T; N] {
+    #[cfg(debug_assertions)]
+    {
+      &mut self.data[row as usize * self.width + col as usize]
+    }
+    #[cfg(not(debug_assertions))]
+    unsafe {
+      self.data.get_unchecked_mut(row as usize * self.width + col as usize)
     }
   }
 
