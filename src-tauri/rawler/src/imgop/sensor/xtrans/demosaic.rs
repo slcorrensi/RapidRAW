@@ -8,6 +8,7 @@ use crate::{
   pixarray::{Color2D, PixF32},
 };
 use rayon::prelude::*;
+use std::cmp::{min, max};
 
 #[derive(Default)]
 pub struct XTransDemosaic {}
@@ -66,16 +67,658 @@ impl XTransDemosaic {
         }
     }
 
+    fn clip(x: f32) -> f32 {
+        Self::lim(x, 0.0f32, 65535f32)
+    }
+
+    fn lim(x: f32, min_val: f32, max_val: f32) -> f32 {
+        max(min_val, min(x, max_val)) as f32
+    }
+
+    fn get_pix(pixels: &PixF32, row: usize, col: usize, offset: i16) -> &f32 {
+        let index = row as i16 * pixels.width as i16 + col as i16 + offset;
+        &pixels.data[index as usize]
+    }
+
+    fn get_rgb(rgb_image: &Color2D<f32, 3>, row: usize, col: usize, offset: i16) -> &[f32; 3] {
+        let index = row as i16 * rgb_image.width as i16 + col as i16 + offset;
+        &rgb_image.data[index as usize]
+    }
+
+    fn write_pix(rgb_image: &mut Color2D<f32, 3>, color_channel: usize, row: usize, col: usize, offset: i16, value: f32) {
+        let index = row as i16 * rgb_image.width as i16 + col as i16 + offset;
+        rgb_image.data[index as usize][color_channel] = value;
+    }   
+
 }
 
 impl Demosaic<f32, 3> for XTransDemosaic {
 
     /// Frank Markesteijn's algorithm for Fuji X-Trans sensors
     fn demosaic(&self, pixels: &PixF32, cfa: &CFA, _colors: &PlaneColor, roi: Rect) -> Color2D<f32, 3> {
-        todo!()
-    }
+        
+        let passes = 3; // Fixed number of passes for high-quality demosaicing
 
+        // Define ROI dimensions
+        let width = roi.d.w;
+        let height = roi.d.h;
+
+        // Initialize the output color image
+        let mut out = Color2D::<f32, 3>::new(roi.width(), roi.height());
+
+        // Core variables for the interpolation process
+        let ndir = 4 << if passes > 1 { 1 } else { 0 };
+        let mut allhex = [[[[0; 8]; 2]; 3]; 3]; // Placeholder for allhex
+
+        // Define static arrays used in interpolation
+        const TS: usize = 114; // tile size
+        const TSH: usize = TS / 2; // half tile size
+        let orth = [1, 0, 0, 1, -1, 0, 0, -1, 1, 0, 0, 1];
+        let patt = [
+            [0, 1, 0, -1, 2, 0, -1, 0, 1, 1, 1, -1, 0, 0, 0, 0],
+            [0, 1, 0, -2, 1, 0, -2, 0, 1, 1, -2, -2, 1, -1, -1, 1],
+        ];
+        let dir = [1, TS as i16, (TS + 1) as i16, (TS - 1) as i16];
+
+        // Offset in the sensor matrix of the solitary green pixels
+        let mut sgrow: u16 = 0;
+        let mut sgcol: u16 = 0;
+
+        // Map a green hexagon around each non-green pixel and vice versa
+        for row in 0..3 {
+            for col in 0..3 {
+                for d_val in (0..10).step_by(2) {
+                    let mut ng = 0; // Number of non green pixels adjacent to the current pixel
+                    let g = if cfa.color_at(row, col) == CFA_COLOR_G { 1 } else { 0 };
+
+                    // Check neighboring pixels
+                    let row_check = (row as i32 + orth[d_val] as i32) as usize;
+                    let col_check = (col as i32 + orth[d_val + 2] as i32) as usize;
+                    if cfa.color_at((row_check + 48) % 48, (col_check + 48) % 48) == CFA_COLOR_G {
+                        ng = 0;
+                    } else {
+                        ng += 1;
+                    }
+
+                    // If there are four non-green pixels adjacent in cardinal directions, this is the solitary green pixel
+                    if ng == 4 {
+                        sgrow = row as u16;
+                        sgcol = col as u16;
+                    }
+
+                    if ng == g + 1 {
+                        for c in 0..8 {
+                            let orth_d = orth[d_val];
+                            let orth_d_2 = orth[d_val + 2];
+                            let orth_d_3 = orth[d_val + 1];
+                            let orth_d_4 = orth[d_val + 3];
+
+                            let v = orth_d as i32 * patt[g as usize][c * 2] as i32
+                                + orth_d_3 as i32 * patt[g as usize][c * 2 + 1] as i32;
+                            let h = orth_d_2 as i32 * patt[g as usize][c * 2] as i32
+                                + orth_d_4 as i32 * patt[g as usize][c * 2 + 1] as i32;
+
+                            let index = c ^ ((g * 2) & d_val as usize);
+                            allhex[row][col][0][index] = (h + v * roi.d.w as i32) as i16;
+                            allhex[row][col][1][index] = (h + v * TS as i32) as i16;
+                        }
+                    }
+                }
+            }
+        }
+
+        let mut right_shift = vec![3];
+        for row in 0..3 {
+            // Count number of green pixels in 3 cols
+            let mut green_count = 0;
+            for col in 0..3 {
+                if cfa.color_at(row, col) == CFA_COLOR_G {
+                    green_count += 1;
+                }
+                right_shift[row] = green_count; 
+            }
+        }
+
+        #[derive(Clone, Copy)]
+        struct MinMaxGreen {
+            min: f32,
+            max: f32,
+        }
+
+        // Allocate separate arrays
+        let mut lab = vec![vec![0.0f32; (TS - 8) as usize]; (TS - 8) as usize];
+        let mut drv = vec![vec![0.0f32; (TS - 10) as usize]; (TS - 10) as usize];
+        let mut homo = vec![vec![0u8; TS as usize]; TS as usize];
+        let mut green_min_max_tile = vec![MinMaxGreen { min: 0.0, max: 0.0 }; TSH as usize];
+        let mut homo_sum = vec![vec![0u8; TS as usize]; TS as usize];
+        let mut homo_sum_max = vec![0u8; TS as usize];
+
+        // Tile processing
+        let mut top = 3;
+        while top < height - 19 {
+            let mut left = 3;
+            while left < width - 19 {
+                let mrow = min(top + TS, height - 3);
+                let mcol = min(left + TS, width - 3);
+
+                // Set greenmin and greenmax to the minimum and maximum allowed values
+                for row in top..mrow {
+                    // Find first non-green pixel
+                    let mut left_start = left;
+
+                    for _ in left_start..mcol {
+                        if cfa.color_at(row, left_start) == CFA_COLOR_G {
+                            break;
+                        } else {
+                            left_start += 1;
+                        }
+                    }
+
+                    let mut col_offset = if right_shift[row % 3] == 1 {
+                        3
+                    } else {
+                        1 + (cfa.color_at(row, left_start + 1) & 1)
+                    };
+
+                    if col_offset == 3 {
+                        let hex = allhex[row % 3][left_start % 3][0];
+                        let mut col = left_start;
+                        while col < mcol {
+                            let mut minval: f32 = f32::MAX;
+                            let mut maxval: f32 = 0.0;
+
+                            for c in 0..6 {
+                                let val = pixels.data[(row as i16 * width as i16 + col as i16 + hex[c]) as usize];
+                                minval = minval.min(val);
+                                maxval = maxval.max(val);
+                            }
+
+                            let index = (row - top) * TSH + (col - left) / 2;
+                            green_min_max_tile[index].min = minval;
+                            green_min_max_tile[index].max = maxval;
+
+                            col += col_offset;
+                        }
+                    } else {
+                        let mut minval: f32 = f32::MAX;
+                        let mut maxval: f32 = 0.0;
+                        let mut col = left_start;
+
+                        if col_offset == 2 {
+                            // Get the hex pattern for this position
+                            let hex = &allhex[0][row % 3][col % 3];
+
+                            // Process the 6 neighboring pixels
+                            for c in 0..6 {
+                                let val = pixels.data[(row as i16 * width as i16 + col as i16 + hex[c]) as usize];
+                                minval = minval.min(val);
+                                maxval = maxval.max(val);
+                            }
+
+                            // Calculate the index for green_min_max_tile
+                            let tile_row = row - top;
+                            let tile_col = (col - left) / 2;
+                            let index = tile_row * TSH + tile_col;
+
+                            // Update the min/max values
+                            green_min_max_tile[index].min = minval;
+                            green_min_max_tile[index].max = maxval;
+                            col += 2;
+                        }
+
+                        let hex = allhex[0][row % 3][left_start % 3];
+
+                        while col < mcol.saturating_sub(1) {
+                            let mut minval: f32 = f32::MAX;
+                            let mut maxval: f32 = 0f32;
+
+                            for c in 0..6 {
+                                let val = pixels.data[(row as i16 * width as i16 + col as i16 + hex[c]) as usize];
+                                minval = minval.min(val);
+                                maxval = maxval.max(val);
+                            }
+
+                            let index1 = (row - top) * TSH + (col - left) / 2;
+                            let index2 = (row - top) * TSH + (col + 1 - left) / 2;
+                            green_min_max_tile[index1].min = minval;
+                            green_min_max_tile[index1].max = maxval;
+                            green_min_max_tile[index2].min = minval;
+                            green_min_max_tile[index2].max = maxval;
+
+                            col += 3;
+                        }
+
+                        if col < mcol {
+                            let mut minval: f32 = f32::MAX;
+                            let mut maxval: f32 = 0f32;
+
+                            for c in 0..6 {
+                                let val = pixels.data[(row as i16 * width as i16 + col as i16 + hex[c]) as usize];
+                                minval = minval.min(val);
+                                maxval = maxval.max(val);
+                            }
+
+                            let index = (row - top) * TSH + (col - left) / 2;
+                            green_min_max_tile[index].min = minval;
+                            green_min_max_tile[index].max = maxval;
+                        } 
+                    }
+                }
+
+                for row in top..mrow {
+                    for col in left..mcol {
+                        let pixel_value = pixels.data[row * width + col];
+                        out.data[row * width + col] = [pixel_value, pixel_value, pixel_value];
+                    }
+                }
+
+                // Interpolate green horizontally, vertically and along both diagonals
+                for row in top..mrow {
+
+                    // Find first non green pixel
+                    let mut left_start = left;
+                    while left_start < mcol {
+                        if cfa.color_at(row, left_start) != 1 {
+                            break;
+                        } else {
+                            left_start += 1;
+                        }
+                    }
+
+                    let col_offset = if right_shift[row % 3] == 1 {
+                        3
+                    } else {
+                        1 + (cfa.color_at(row, left_start + 1) & 1)
+                    };
+
+                    if col_offset == 3 {
+                        let hex = &allhex[row % 3][left_start % 3][0];
+                        let mut col = left_start;
+                        while col < mcol {
+                            let pix_base_idx = col;
+                            let mut color = [0.0f32; 4];
+                            
+                            color[0] = 0.6796875f32 * (Self::get_pix(&pixels, row, col, hex[1]) + Self::get_pix(&pixels, row, col,hex[0])) 
+                                    - 0.1796875f32 * (Self::get_pix(&pixels, row, col,2 * hex[1]) + Self::get_pix(&pixels, row, col,2 * hex[0]));
+                            
+                            color[1] = 0.87109375f32 * Self::get_pix(&pixels, row, col,hex[3])
+                                    + Self::get_pix(&pixels, row, col,hex[2]) * 0.12890625f32 
+                                    + 0.359375f32 * (Self::get_pix(&pixels, row, col,0) - Self::get_pix(&pixels, row, col,-hex[2]));
+                            
+                            for c in 0..2 {
+                                color[2 + c] = 0.640625f32 * Self::get_pix(&pixels, row, col,hex[4 + c]) 
+                                            + 0.359375f32 * Self::get_pix(&pixels, row, col,-2 * hex[4 + c]) 
+                                            + 0.12890625f32 * (2.0f32 * Self::get_pix(&pixels, row, col,0) 
+                                                            - Self::get_pix(&pixels, row, col,3 * hex[4 + c]) 
+                                                            - Self::get_pix(&pixels, row, col,-3 * hex[4 + c]));
+                            }
+                            
+                            for c in 0..4 {
+                                let index = (row - top) * TSH + (col - left) / 2;
+                                let min_val = green_min_max_tile[index].min;
+                                let max_val = green_min_max_tile[index].max;
+                                out.data[(row - top) * width + (col - left) + c][1] = color[c].max(min_val).min(max_val);
+                            }
+                            
+                            col += col_offset;
+                        }
+                    } else {
+                        let mut hexmod = [
+                            &allhex[row % 3][left_start % 3][0],
+                            &allhex[row % 3][(left_start + col_offset) % 3][0],
+                        ];
+
+                        let mut col = left_start;
+                        let mut hex_index = 0;
+                        while col < mcol {
+                            let pix = &pixels.data[row * width + col];
+                            let hex = hexmod[hex_index];
+                            let mut color = [0.0f32; 4];
+
+                            color[0] =   0.6796875f32 * (Self::get_pix(&pixels, row, col, hex[1]) + Self::get_pix(&pixels, row, col, hex[0])) 
+                                       - 0.1796875f32 * (Self::get_pix(&pixels, row, col, 2 * hex[1]) + Self::get_pix(&pixels, row, col, 2 * hex[0]));
+                            
+                            color[1] =   0.87109375f32 * Self::get_pix(&pixels, row, col, hex[3])
+                                       + 0.12890625f32 * Self::get_pix(&pixels, row, col, hex[2])
+                                       + 0.359375f32 * (Self::get_pix(&pixels, row, col, 0) - Self::get_pix(&pixels, row, col, -hex[2]));
+                            
+                            for c in 0..2 {
+                                color[2 + c] =   0.640625f32 * Self::get_pix(pixels, row, col, hex[4 + c])
+                                               + 0.359375f32 * Self::get_pix(pixels, row, col, -2 * hex[4 + c])
+                                               + 0.12890625f32 * (2.0f32 * Self::get_pix(pixels, row, col, 0) - Self::get_pix(pixels, row, col, 3 * hex[4 + c]) - Self::get_pix(pixels, row, col, -3 * hex[4 + c]));
+                            }
+
+                            for c in 0..4 {
+                                let index = (row - top) * TSH + (col - left) / 2;
+                                let value = Self::lim(color[c], green_min_max_tile[index].min, green_min_max_tile[index].max);
+                                Self::write_pix(&mut out, 1, row - top, col - left, (c ^ 1) as i16, value)
+                            }
+
+                            col += col_offset;
+                            col_offset ^= 3;
+                            hex_index ^= 1;
+                        }
+                    }
+                }
+            
+                for pass in 0..passes {
+                    if pass == 1 {
+                        // TRANSLATE !
+                        todo!("memcpy")
+                    }
+
+                    // Recalculate green from interpolated values of closer pixels
+                    if pass != 0 {
+                        for row in (top + 2)..(mrow - 2) {
+                            
+                            let mut left_start = left + 2;
+                            while left_start < mcol {
+                                if cfa.color_at(row, left_start) != 1 {
+                                    break;
+                                } else {
+                                    left_start += 1;
+                                }
+                            }
+
+                            let col_offset = if right_shift[row % 3] == 1 {
+                                3
+                            } else {
+                                1 + (cfa.color_at(row, left_start + 1) & 1)
+                            };
+
+                            if col_offset == 3 {
+                                let f = cfa.color_at(row, left_start);
+                                let mut col = left_start;
+                                let hex = &allhex[row % 3][left_start % 3][1];
+                                while col < mcol - 2 {
+                                    for d in 3..6 {
+                                        let val = 
+                                              0.33333333f32 * Self::get_pix(&out, row, col, -2 * hex[d], 1)
+                                            + 2 * (Self::get_pix(&out, row, col, hex[d], 1) - Self::get_pix(&out, row, col, hex[d], f))
+                                            - Self::get_pix(&out, row, col, -2 * hex[d], 1) 
+                                            + Self::get_pix(&out, row, col, 0, f);
+                                        let index = (row - top) * TSH + (col - left) / 2;
+                                        let value = Self::lim(val, green_min_max_tile.min, green_min_max_tile.max);
+                                        Self::write_pix(out, row, col, 0, 1, value);
+                                    }
+
+                                    f ^= 2;
+                                    col += col_offset;
+                                }
+                            } else {
+                                let f = cfa.color_at(row, left_start);
+                                let mut hex_mod = [
+                                    &allhex[row % 3][left_start % 3][1],
+                                    &allhex[row % 3][(left_start + col_offset) % 3][1],
+                                ];
+
+                                let mut col = left_start;
+                                let hex_index = 0;
+                                while col < mcol - 2 {
+
+                                    for d in 3..6 {
+                                        let base_offset = (d - 2) ^ 1;
+                                        let hex = hex_mod[hex_index];
+                                        let val =   0.33333333f32 * Self::get_rgb(&out, row - top, col - left, base_offset - 2 * hex[d])[1]
+                                                  + 2 * (Self::get_rgb(&out, row - top, col - left, base_offset + hex[d])[1]
+                                                       - Self::get_rgb(&out, row - top, col - left, base_offset + hex[d])[f])
+                                                  - Self::get_rgb(&out, row - top, col - left, base_offset - 2 * hex[d])[f]
+                                                  + Self::get_rgb(&out, row - top, col - left, base_offset)[f];
+                                        let index = (row - top) * TSH + (col - left) / 2;
+                                        let value = Self::lim(val, green_min_max_tile.min, green_min_max_tile.max);
+                                        Self::write_pix(&mut out, 1, row, col, 0, value)
+                                    }
+
+                                    col += col_offset;
+                                    col_offset ^= 3;
+                                    f = f ^(col_offset & 2);
+                                    hex_index ^= 1; 
+                                }
+                                
+                            }
+                        
+
+
+                        }
+                    }
+
+                    // Interpolate red and blue values for solitary green pixels
+                    let sg_start_col = (left - sgrow + 4) / 3 * 3 + sgcol;
+                    let mut color = vec![vec![0f32; 6]; 3];
+
+                    for row in ( ((top - sgrow + 4) / 3 * 3)..(mrow - 2) ).step_by(3) {
+                        let mut col = sg_start_col;
+                        let h = cfa.color_at(row, col + 1);
+                        while col < mcol - 2 {
+                            let mut diff = vec![0f32; 6];
+                            let mut base_offset = 0i16;
+                            let i = 1;
+                            for d in 0..6 {
+                                for c in 0..2 {
+                                    let g = 2.0f32 * Self::get_rgb(&mut out, row - top, col - left, base_offset)[1]
+                                            - Self::get_rgb(&mut out, row - top, col - left,   base_offset + i << c)[1]
+                                            - Self::get_rgb(&mut out, row - top, col - left, base_offset + - i << c)[1];
+                                    color[h][d] = g + Self::get_rgb(&mut out, row - top, col - left,   base_offset + i << c)[h]
+                                                    + Self::get_rgb(&mut out, row - top, col - left, base_offset + - i << c)[h];
+                                    
+                                    if d > 1 {
+                                        diff[d] += (  Self::get_rgb(&mut out, row - top, col - left,   base_offset + i << c)[1]
+                                                    - Self::get_rgb(&mut out, row - top, col - left, base_offset + - i << c)[1]
+                                                    - Self::get_rgb(&mut out, row - top, col - left,   base_offset + i << c)[h]
+                                                    + Self::get_rgb(&mut out, row - top, col - left, base_offset + - i << c)[h] ).powi(2i32)
+                                                   + g.powi(2i32);
+                                    }
+                                    h ^= 2;
+                                }
+
+                                if d > 2 && (d & 1) != 0 {
+                                    if diff[d - 1] < diff[d] {
+                                        for c in 0..2 {
+                                            color[c * 2][d] = color[c * 2][d - 1]; 
+                                        }
+                                    }
+                                }
+
+                                if (d & 1) != 0 || d < 2 {
+                                    for c in 0..2 {
+                                        let value = Self::clip(0.5f32 * color[c * 2][d]);
+                                        Self::write_pix(&mut out, c * 2, row - top, col - left, base_offset, value);
+                                    }
+                                    base_offset += (TS * TS) as i16;
+                                }
+
+                                i ^= (TS ^ 1) as i16;
+                                h ^= 2;
+                            }
+
+                            col += 3;
+                            h ^= 2;
+                        }
+                    }
+
+                    // Interpolate red for blue pixels and vice versa
+                    for row in (top + 3)..(mrow - 3) {
+                        
+                        let mut left_start = left + 3;
+                        while left_start < mcol - 1 {
+                            if cfa.color_at(row, left_start) != 1 {
+                                break;
+                            } else {
+                                left_start += 1;
+                            }
+                        }
+
+                        let col_offset = if right_shift[row % 3] == 1 {
+                            3
+                        } else {
+                            1
+                        };
+
+                        let c = if ((row - sgrow) % 3) != 0 { TS } else { 1 };
+                        let h = 3 * (c ^ TS ^ 1);
+
+                        if col_offset == 3 {
+                            let f = 2 - cfa.color_at(row, left_start);
+
+                            let mut col = left_start;
+                            while col < mcol - 3 {
+
+                                let mut base_offset = 0;
+                                let g = Self::get_rgb(&out, row - top, col - left, base_offset)[1];
+                                let g_pc = Self::get_rgb(&out, row - top, col - left, base_offset + c)[1];
+                                let g_mc = Self::get_rgb(&out, row - top, col - left, base_offset - c)[1];
+                                let g_ph = Self::get_rgb(&out, row - top, col - left, base_offset + h)[1];
+                                let g_mh = Self::get_rgb(&out, row - top, col - left, base_offset - h)[1];
+                                for d in 0..4 {
+                                    let i = if d > 1 || (d ^ c) & 1 != 0 || (g - g_pc).abs() + (g - g_mc).abs() < 2f32 * (g - g_ph).abs() + (g - g_mh).abs() {
+                                        c
+                                    } else {
+                                        h
+                                    };
+                                    let c1 = Self::get_rgb(&out, row - top, col - left, base_offset + i)[f];
+                                    let c2 = Self::get_rgb(&out, row - top, col - left, base_offset - i)[f];
+                                    let c3 = Self::get_rgb(&out, row - top, col - left, base_offset + i)[1];
+                                    let c4 = Self::get_rgb(&out, row - top, col - left, base_offset - i)[1];
+
+                                    let value = Self::clip(g + 0.5f32 * (c1 + c2 - c3 - c4));
+                                    Self::write_pix(&mut out, f, row, col, base_offset, value);
+
+                                    base_offset += (TS * TS) as i16;
+                                }
+
+                                col += col_offset;
+                                f ^= 2;
+                            }
+
+                        } else {
+                            col_offset = if cfa.color_at(row, left_start + 1) == CFA_COLOR_G {
+                                2
+                            } else {
+                                1
+                            };
+
+                            let f = 2 - cfa.color_at(row, left_start);
+
+                            let mut col = left_start;
+                            let mut base_offset = 0;
+                            while col < mcol - 3 {
+                                for d in 0..4 {
+                                    let i = if d > 1 || (d ^ c) & 1 != 0 || (g - g_pc).abs() + (g - g_mc).abs() < 2f32 * (g - g_ph).abs() + (g - g_mh).abs() {
+                                        c
+                                    } else {
+                                        h
+                                    };
+                                    let c1 = Self::get_rgb(&out, row - top, col - left, base_offset + i)[f];
+                                    let c2 = Self::get_rgb(&out, row - top, col - left, base_offset - i)[f];
+                                    let c3 = Self::get_rgb(&out, row - top, col - left, base_offset + i)[1];
+                                    let c4 = Self::get_rgb(&out, row - top, col - left, base_offset - i)[1];
+
+                                    let value = Self::clip(g + 0.5f32 * (c1 + c2 - c3 - c4));
+                                    Self::write_pix(&mut out, f, row, col, base_offset, value);
+
+                                    base_offset += (TS * TS) as i16;
+                                }
+                                
+
+                                col += col_offset;
+                                col_offset ^= 3;
+                                f = f ^ (col_offset & 2);
+                            }
+                        }
+                    }
+
+                    // Fill in red and blue for 2x2 blocks of green
+                    
+                    // Find first row of 2x2 green
+                    let mut top_start = top + 2;
+                    while top_start < mrow - 2 {
+                        if (top_start - sgrow) % 3 != 0 {
+                            break;
+                        } else {
+                            top_start += 1;
+                        }
+                    }
+
+                    let mut left_start = left + 2;
+                    while left_start < mcol - 2 {
+                        if (left_start - sgcol) % 3 != 0 {
+                            break;
+                        } else {
+                            left_start += 1;
+                        }
+                    }
+
+                    let col_offset_start = 2 - (cfa.color_at(top_start, left_start + 1) & 1);
+
+                    for row in top_start..(mrow - 2) {
+                        if (row - sgrow) % 3 != 0 {
+                            let mut hexmod = [
+                                &allhex[row % 3][left_start % 3][1],
+                                &allhex[row % 3][(left_start + col_offset_start) % 3][1],
+                            ];
+
+                            let mut col = left_start;
+                            let mut col_offset = col_offset_start;
+                            let mut hex_index = 0;
+                            while col < mcol - 2 {
+                                let base_offset = 0;
+                                let hex = hexmod[hex_index];
+                                
+                                for d in (0..ndir).step_by(2) {
+                                    if hex[d] + hex[d + 1] != 0 {
+                                        let g = 3f32 * Self::get_rgb(&out, row - top , col - left, base_offset)[1]
+                                                - 2f32 * Self::get_rgb(&out, row - top , col - left, base_offset + hex[d])[1]
+                                                -     Self::get_rgb(&out, row - top , col - left, base_offset + hex[d + 1])[1];
+                                        
+                                        for c in (0..4).step_by(2) {
+                                            let value = Self::clip(g
+                                                + 2f32 * Self::get_rgb(&out, row - top , col - left, base_offset + hex[d])[c]
+                                                + 0.33333333f32 * Self::get_rgb(&out, row - top , col - left, base_offset + hex[d + 1])[c]);
+                                            Self::write_pix(&mut out, c, row - top, col - left, base_offset, value);
+                                        }
+                                    } else {
+                                        let g = 
+                                            2f32 * Self::get_rgb(&out, row - top , col - left, base_offset)[1]
+                                            - Self::get_rgb(&out, row - top , col - left, base_offset + hex[d])[1]
+                                            - Self::get_rgb(&out, row - top , col - left, base_offset + hex[d + 1])[1];
+                                        
+                                        for c in (0..4).step_by(2) {
+                                            let value = Self::clip(g
+                                                + Self::get_rgb(&out, row - top , col - left, base_offset + hex[d])[c]
+                                                + 0.5f32 * Self::get_rgb(&out, row - top , col - left, base_offset + hex[d + 1])[c]);
+                                            Self::write_pix(&mut out, c, row - top, col - left, base_offset, value);
+                                        }
+                                    }
+                                    base_offset += TS * TS;
+                                }
+                                col += col_offset;
+                                col_offset ^= 3;
+                                hex_index ^= 1;
+                            }
+                        }
+                    }
+                } // end of multipass part
+
+                mrow -= top;
+                mcol -= left;
+
+
+
+
+
+
+                left += TS - 16;
+            }
+            top += TS - 16;
+        }
+        
+        todo!("Complete the translation up to the specified comment and beyond.");
+
+        // Return placeholder color image
+        out
+    }
 }
+
 
 
 
