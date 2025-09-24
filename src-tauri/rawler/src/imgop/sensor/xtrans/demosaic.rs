@@ -97,18 +97,19 @@ impl Demosaic<f32, 3> for XTransDemosaic {
     /// Frank Markesteijn's algorithm for Fuji X-Trans sensors
     fn demosaic(&self, pixels: &PixF32, cfa: &CFA, _colors: &PlaneColor, roi: Rect) -> Color2D<f32, 3> {
         
-        let passes = 3; // Fixed number of passes for high-quality demosaicing
+        // Fixed number of passes for high-quality demosaicing
+        let passes = 3; 
 
         // Define ROI dimensions
-        let width = roi.d.w;
-        let height = roi.d.h;
+        let width = roi.width();
+        let height = roi.height();
 
         // Initialize the output color image
-        let mut out = Color2D::<f32, 3>::new(roi.width(), roi.height());
+        let mut out = Color2D::<f32, 3>::new(width, height);
 
         // Core variables for the interpolation process
-        let ndir = 4 << if passes > 1 { 1 } else { 0 };
-        let mut allhex = [[[[0; 8]; 2]; 3]; 3]; // Placeholder for allhex
+        let ndir = 4;
+        let mut allhex = [[[[0; 8]; 2]; 3]; 3];
 
         // Define static arrays used in interpolation
         const TS: usize = 114; // tile size
