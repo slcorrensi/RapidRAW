@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["error","main","usage"],"static":["ITERATIONS"]};

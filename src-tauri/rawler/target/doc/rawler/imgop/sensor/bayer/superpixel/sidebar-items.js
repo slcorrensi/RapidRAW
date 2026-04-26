@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"struct":["Superpixel3Channel","Superpixel4Channel","SuperpixelQuarterRes3Channel"]};

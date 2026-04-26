@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["DemosaicAlgorithm","Intermediate","ProcessingStep"],"struct":["RawDevelop","RawDevelopBuilder"]};

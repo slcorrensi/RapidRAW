@@ -1,0 +1,1 @@
+searchState.loadedDescShard("equator_macro", 0, "")

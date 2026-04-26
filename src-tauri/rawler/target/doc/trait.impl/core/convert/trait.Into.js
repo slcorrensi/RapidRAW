@@ -1,0 +1,9 @@
+(function() {
+    var implementors = Object.fromEntries([["backtrace",[["impl <a class=\"trait\" href=\"https://doc.rust-lang.org/1.89.0/core/convert/trait.Into.html\" title=\"trait core::convert::Into\">Into</a>&lt;<a class=\"struct\" href=\"https://doc.rust-lang.org/1.89.0/alloc/vec/struct.Vec.html\" title=\"struct alloc::vec::Vec\">Vec</a>&lt;<a class=\"struct\" href=\"backtrace/struct.BacktraceFrame.html\" title=\"struct backtrace::BacktraceFrame\">BacktraceFrame</a>&gt;&gt; for <a class=\"struct\" href=\"backtrace/struct.Backtrace.html\" title=\"struct backtrace::Backtrace\">Backtrace</a>"]]],["exr",[["impl <a class=\"trait\" href=\"https://doc.rust-lang.org/1.89.0/core/convert/trait.Into.html\" title=\"trait core::convert::Into\">Into</a>&lt;<a class=\"struct\" href=\"https://doc.rust-lang.org/1.89.0/alloc/string/struct.String.html\" title=\"struct alloc::string::String\">String</a>&gt; for <a class=\"struct\" href=\"exr/meta/attribute/struct.Text.html\" title=\"struct exr::meta::attribute::Text\">Text</a>"]]],["rgb",[["impl&lt;T&gt; <a class=\"trait\" href=\"https://doc.rust-lang.org/1.89.0/core/convert/trait.Into.html\" title=\"trait core::convert::Into\">Into</a>&lt;<a class=\"primitive\" href=\"https://doc.rust-lang.org/1.89.0/core/primitive.array.html\">[T; 4]</a>&gt; for <a class=\"struct\" href=\"rgb/struct.Argb.html\" title=\"struct rgb::Argb\">Argb</a>&lt;T&gt;"]]]]);
+    if (window.register_implementors) {
+        window.register_implementors(implementors);
+    } else {
+        window.pending_implementors = implementors;
+    }
+})()
+//{"start":57,"fragment_lengths":[547,427,371]}

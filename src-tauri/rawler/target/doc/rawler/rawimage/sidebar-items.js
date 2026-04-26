@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["RawImageData","RawPhotometricInterpretation"],"struct":["BlackLevel","CFAConfig","RawImage","WhiteLevel"]};

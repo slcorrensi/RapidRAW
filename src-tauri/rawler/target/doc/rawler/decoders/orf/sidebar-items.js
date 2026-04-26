@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["OrfEquipmentTags","OrfImageProcessing","OrfMakernotes"],"fn":["parse_makernote"],"struct":["OrfDecoder"]};

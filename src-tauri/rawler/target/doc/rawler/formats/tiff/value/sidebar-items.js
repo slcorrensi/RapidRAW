@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["Value"],"struct":["Rational","SRational","TiffAscii","ValueConvertError"],"trait":["IntoTiffValue"]};

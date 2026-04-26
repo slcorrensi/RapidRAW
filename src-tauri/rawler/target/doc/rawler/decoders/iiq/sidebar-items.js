@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"struct":["IiqDecoder","IiqFormat"],"type":["IiqMakernotes"]};

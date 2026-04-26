@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["RgbBayerPattern"],"mod":["bilinear","ppg","superpixel"],"trait":["Demosaic"]};

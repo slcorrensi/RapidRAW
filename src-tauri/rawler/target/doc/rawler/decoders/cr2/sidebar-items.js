@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["Cr2MakernoteTag"],"struct":["Cr2Decoder","Cr2Format"]};

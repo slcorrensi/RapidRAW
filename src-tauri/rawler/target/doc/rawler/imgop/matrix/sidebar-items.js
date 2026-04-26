@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["IDENTITY_MATRIX_3"],"fn":["multiply","normalize","pseudo_inverse","transform_1d","transform_2d","transpose"]};

@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["JfifError","Payload","Segment"],"fn":["is_exif","is_jfif"],"struct":["App0","App1","Jfif","SOS"],"trait":["ReadSegment"],"type":["Result"]};

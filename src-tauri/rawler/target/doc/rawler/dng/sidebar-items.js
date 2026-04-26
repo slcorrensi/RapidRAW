@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["DNG_VERSION_V1_0","DNG_VERSION_V1_1","DNG_VERSION_V1_2","DNG_VERSION_V1_3","DNG_VERSION_V1_4","DNG_VERSION_V1_5","DNG_VERSION_V1_6"],"enum":["CropMode","DngCompression","DngPhotometricConversion"],"fn":["rect_to_dng_area"],"mod":["convert","original","writer"]};

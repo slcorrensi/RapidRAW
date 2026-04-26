@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["CiffTag"],"fn":["is_ciff"],"struct":["CiffEntry","CiffIFD"]};

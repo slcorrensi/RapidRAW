@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"struct":["BitArray"],"trait":["BitStorage"],"type":["BitArray128","BitArray16","BitArray32","BitArray64","BitArray8"]};

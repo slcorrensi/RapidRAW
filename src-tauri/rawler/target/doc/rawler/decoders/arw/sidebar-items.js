@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["ArwMakernoteTag","SR2SubIFD"],"struct":["ArwDecoder"]};

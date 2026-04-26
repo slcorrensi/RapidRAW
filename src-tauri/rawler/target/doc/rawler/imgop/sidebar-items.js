@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["clip","convert_from_f32_scaled_u16","convert_from_f32_unscaled_u16","convert_to_f32_scaled","convert_to_f32_unscaled","crop","scale_double_to_u16","scale_double_to_u8","scale_u16_to_double","scale_u8_to_double"],"mod":["develop","gamma","matrix","raw","sensor","spline","srgb","xyz","yuv"],"struct":["Dim2","Point","Rect"],"type":["Result"]};

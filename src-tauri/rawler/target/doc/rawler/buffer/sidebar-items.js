@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["PaddedBufImpl"],"struct":["PaddedBuf"]};

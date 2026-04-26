@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["srgb_apply_gamma","srgb_apply_gamma_inplace","srgb_apply_gamma_n","srgb_invert_gamma","srgb_invert_gamma_inplace"]};

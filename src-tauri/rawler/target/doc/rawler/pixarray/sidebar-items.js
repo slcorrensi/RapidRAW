@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"struct":["Color2D","Color2DPtr","Pix2D","SharedPix2D"],"type":["Ch4F32","PixF32","PixU16","RgbF32"]};

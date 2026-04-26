@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["CFA_COLOR_B","CFA_COLOR_G","CFA_COLOR_R"],"enum":["CFAColor"],"struct":["CFA","PlaneColor"]};

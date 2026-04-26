@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["UUID_TYP"],"enum":["BmffError"],"fn":["parse_buffer","parse_file","read_box_header_ext"],"mod":["co64","dinf","ext_cr3","free","ftyp","hdlr","mdat","mdhd","mdia","minf","moov","mvhd","skip","stbl","stsc","stsd","stsz","stts","tkhd","trak","vendor","vmhd"],"struct":["Bmff","BoxHeader","FileBox","FourCC"],"trait":["BmffBox","ReadBox"]};

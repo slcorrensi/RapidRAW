@@ -1,0 +1,193 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="A priority queue implemented with a d-ary heap."><title>dary_heap - Rust</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-6b053e98.ttf.woff2,FiraSans-Italic-81dc35de.woff2,FiraSans-Regular-0fe48ade.woff2,FiraSans-MediumItalic-ccf7e434.woff2,FiraSans-Medium-e1aa3f0a.woff2,SourceCodePro-Regular-8badfe75.ttf.woff2,SourceCodePro-Semibold-aa29a496.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../static.files/normalize-9960930a.css"><link rel="stylesheet" href="../static.files/rustdoc-84e720fa.css"><meta name="rustdoc-vars" data-root-path="../" data-static-root-path="../static.files/" data-current-crate="dary_heap" data-themes="" data-resource-suffix="" data-rustdoc-version="1.89.0 (29483883e 2025-08-04)" data-channel="1.89.0" data-search-js="search-92309212.js" data-settings-js="settings-5514c975.js" ><script src="../static.files/storage-4e99c027.js"></script><script defer src="../crates.js"></script><script defer src="../static.files/main-fd3af306.js"></script><noscript><link rel="stylesheet" href="../static.files/noscript-32bb7600.css"></noscript><link rel="alternate icon" type="image/png" href="../static.files/favicon-32x32-6580c154.png"><link rel="icon" type="image/svg+xml" href="../static.files/favicon-044be391.svg"></head><body class="rustdoc mod crate"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="mobile-topbar"><button class="sidebar-menu-toggle" title="show sidebar"></button></nav><nav class="sidebar"><div class="sidebar-crate"><h2><a href="../dary_heap/index.html">dary_<wbr>heap</a><span class="version">0.3.7</span></h2></div><div class="sidebar-elems"><ul class="block"><li><a id="all-types" href="all.html">All Items</a></li></ul><section id="rustdoc-toc"><h3><a href="#">Sections</a></h3><ul class="block top-toc"><li><a href="#comparison-to-standard-library" title="Comparison to standard library">Comparison to standard library</a></li><li><a href="#comparison-of-different-arities-d" title="Comparison of different arities d">Comparison of different arities d</a></li><li><a href="#usage" title="Usage">Usage</a><ul><li><a href="#validity-of-arities-in-d-ary-heaps" title="Validity of arities in d-ary heaps">Validity of arities in d-ary heaps</a></li></ul></li><li><a href="#examples" title="Examples">Examples</a></li></ul><h3><a href="#structs">Crate Items</a></h3><ul class="block"><li><a href="#structs" title="Structs">Structs</a></li><li><a href="#types" title="Type Aliases">Type Aliases</a></li></ul></section><div id="rustdoc-modnav"></div></div></nav><div class="sidebar-resizer" title="Drag to resize sidebar"></div><main><div class="width-limiter"><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="main-heading"><h1>Crate <span>dary_heap</span><button id="copy-path" title="Copy item path to clipboard">Copy item path</button></h1><rustdoc-toolbar></rustdoc-toolbar><span class="sub-heading"><a class="src" href="../src/dary_heap/lib.rs.html#1-2174">Source</a> </span></div><details class="toggle top-doc" open><summary class="hideme"><span>Expand description</span></summary><div class="docblock"><p>A priority queue implemented with a <em>d</em>-ary heap.</p>
+<p>Insertion and popping the largest element have <em>O</em>(log(<em>n</em>)) time complexity.
+Checking the largest element is <em>O</em>(1). Converting a vector to a <em>d</em>-ary heap
+can be done in-place, and has <em>O</em>(<em>n</em>) complexity. A <em>d</em>-ary heap can also be
+converted to a sorted vector in-place, allowing it to be used for an <em>O</em>(<em>n</em> * log(<em>n</em>))
+in-place heapsort.</p>
+<h2 id="comparison-to-standard-library"><a class="doc-anchor" href="#comparison-to-standard-library">§</a>Comparison to standard library</h2>
+<p>The standard library contains a 2-ary heap
+(<a href="https://doc.rust-lang.org/std/collections/struct.BinaryHeap.html"><code>std::collections::BinaryHeap</code></a>). The <a href="type.BinaryHeap.html"><code>BinaryHeap</code></a> of this crate
+aims to be a drop-in replacement, both in API and in performance. Cargo
+features are used in place of unstable Rust features. The advantage of this
+crate over the standard library lies in the possibility of easily changing
+the arity of the heap, which can increase performance.</p>
+<p>The standard library binary heap can contain up to <a href="https://doc.rust-lang.org/1.89.0/core/primitive.isize.html#associatedconstant.MAX" title="associated constant isize::MAX"><code>isize::MAX</code></a> elements;
+this is the same for the binary heap of this crate, but other heaps in this
+crate can hold less elements. In the general case, the maximum number of
+elements is (<a href="https://doc.rust-lang.org/1.89.0/core/primitive.usize.html#associatedconstant.MAX" title="associated constant usize::MAX"><code>usize::MAX</code></a> - 1) / <em>d</em> for an arity of <em>d</em>. On 64-bit systems
+this should generally not be a concern when using reasonable arities. On
+32-bit systems this may be a concern when using very large heaps with a
+relatively high arity.</p>
+<h2 id="comparison-of-different-arities-d"><a class="doc-anchor" href="#comparison-of-different-arities-d">§</a>Comparison of different arities <em>d</em></h2>
+<p>The arity <em>d</em> is defined as the maximum number of children each node can
+have. A higher number means the heap has less layers, but may require more
+work per layer because there are more children present. This generally makes
+methods adding elements to the heap such as <a href="struct.DaryHeap.html#method.push"><code>push</code></a> faster, and methods
+removing them such as <a href="struct.DaryHeap.html#method.pop"><code>pop</code></a> slower. However, due to higher cache locality
+for higher <em>d</em>, the drop in <a href="struct.DaryHeap.html#method.pop"><code>pop</code></a> performance is often diminished. If you’re
+unsure what value of <em>d</em> to choose, the <a href="type.QuaternaryHeap.html"><code>QuaternaryHeap</code></a> with <em>d</em> = 4 is
+usually a good start, but benchmarking is necessary to determine the best
+value of <em>d</em>.</p>
+<h2 id="usage"><a class="doc-anchor" href="#usage">§</a>Usage</h2>
+<p>Rust type interference cannot infer the desired heap arity (value of <em>d</em>)
+automatically when using <a href="struct.DaryHeap.html"><code>DaryHeap</code></a> directly. It is therefore more
+ergonomic to  use one of the type aliases to select the desired arity:</p>
+<div><table><thead><tr><th>Name</th><th>Arity</th></tr></thead><tbody>
+<tr><td><a href="type.BinaryHeap.html"><code>BinaryHeap</code></a></td><td><em>d</em> = 2</td></tr>
+<tr><td><a href="type.TernaryHeap.html"><code>TernaryHeap</code></a></td><td><em>d</em> = 3</td></tr>
+<tr><td><a href="type.QuaternaryHeap.html"><code>QuaternaryHeap</code></a></td><td><em>d</em> = 4</td></tr>
+<tr><td><a href="type.QuinaryHeap.html"><code>QuinaryHeap</code></a></td><td><em>d</em> = 5</td></tr>
+<tr><td><a href="type.SenaryHeap.html"><code>SenaryHeap</code></a></td><td><em>d</em> = 6</td></tr>
+<tr><td><a href="type.SeptenaryHeap.html"><code>SeptenaryHeap</code></a></td><td><em>d</em> = 7</td></tr>
+<tr><td><a href="type.OctonaryHeap.html"><code>OctonaryHeap</code></a></td><td><em>d</em> = 8</td></tr>
+</tbody></table>
+</div>
+<p>The difference in ergonomics illustrated in the following:</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">use </span>dary_heap::{DaryHeap, TernaryHeap};
+
+<span class="comment">// Type parameter T can be inferred, but arity cannot
+</span><span class="kw">let </span><span class="kw-2">mut </span>heap1 = DaryHeap::&lt;<span class="kw">_</span>, <span class="number">3</span>&gt;::new();
+heap1.push(<span class="number">42</span>);
+
+<span class="comment">// Type alias removes need for explicit type
+</span><span class="kw">let </span><span class="kw-2">mut </span>heap2 = TernaryHeap::new();
+heap2.push(<span class="number">42</span>);</code></pre></div>
+<p>If a different arity is desired, you can use the former or a define a type
+alias yourself. It should be noted that <em>d</em> &gt; 8 is rarely beneficial.</p>
+<h3 id="validity-of-arities-in-d-ary-heaps"><a class="doc-anchor" href="#validity-of-arities-in-d-ary-heaps">§</a>Validity of arities in <em>d</em>-ary heaps</h3>
+<p>Only arities of two or greater are useful in <em>d</em>-ary heap, and are therefore
+the only ones implemented by default. Lower arities are only possible if you
+put in the effort to implement them yourself. An arity of one is possible,
+but yields a heap where every element has one child. This essentially makes
+it a sorted vector with poor performance. Regarding an arity of zero: this
+is not statically prevented, but constructing a <a href="struct.DaryHeap.html"><code>DaryHeap</code></a> with it and
+using it may (and probably will) result in a runtime panic.</p>
+<h2 id="examples"><a class="doc-anchor" href="#examples">§</a>Examples</h2>
+<p>This is a larger example that implements <a href="https://en.wikipedia.org/wiki/Dijkstra%27s_algorithm">Dijkstra’s algorithm</a>
+to solve the <a href="https://en.wikipedia.org/wiki/Shortest_path_problem">shortest path problem</a> on a <a href="https://en.wikipedia.org/wiki/Directed_graph">directed graph</a>.
+It shows how to use <a href="struct.DaryHeap.html"><code>DaryHeap</code></a> with custom types.</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">use </span>std::cmp::Ordering;
+<span class="kw">use </span>dary_heap::TernaryHeap;
+
+<span class="attr">#[derive(Copy, Clone, Eq, PartialEq)]
+</span><span class="kw">struct </span>State {
+    cost: usize,
+    position: usize,
+}
+
+<span class="comment">// The priority queue depends on `Ord`.
+// Explicitly implement the trait so the queue becomes a min-heap
+// instead of a max-heap.
+</span><span class="kw">impl </span>Ord <span class="kw">for </span>State {
+    <span class="kw">fn </span>cmp(<span class="kw-2">&amp;</span><span class="self">self</span>, other: <span class="kw-2">&amp;</span><span class="self">Self</span>) -&gt; Ordering {
+        <span class="comment">// Notice that we flip the ordering on costs.
+        // In case of a tie we compare positions - this step is necessary
+        // to make implementations of `PartialEq` and `Ord` consistent.
+        </span>other.cost.cmp(<span class="kw-2">&amp;</span><span class="self">self</span>.cost)
+            .then_with(|| <span class="self">self</span>.position.cmp(<span class="kw-2">&amp;</span>other.position))
+    }
+}
+
+<span class="comment">// `PartialOrd` needs to be implemented as well.
+</span><span class="kw">impl </span>PartialOrd <span class="kw">for </span>State {
+    <span class="kw">fn </span>partial_cmp(<span class="kw-2">&amp;</span><span class="self">self</span>, other: <span class="kw-2">&amp;</span><span class="self">Self</span>) -&gt; <span class="prelude-ty">Option</span>&lt;Ordering&gt; {
+        <span class="prelude-val">Some</span>(<span class="self">self</span>.cmp(other))
+    }
+}
+
+<span class="comment">// Each node is represented as a `usize`, for a shorter implementation.
+</span><span class="kw">struct </span>Edge {
+    node: usize,
+    cost: usize,
+}
+
+<span class="comment">// Dijkstra's shortest path algorithm.
+
+// Start at `start` and use `dist` to track the current shortest distance
+// to each node. This implementation isn't memory-efficient as it may leave duplicate
+// nodes in the queue. It also uses `usize::MAX` as a sentinel value,
+// for a simpler implementation.
+</span><span class="kw">fn </span>shortest_path(adj_list: <span class="kw-2">&amp;</span>Vec&lt;Vec&lt;Edge&gt;&gt;, start: usize, goal: usize) -&gt; <span class="prelude-ty">Option</span>&lt;usize&gt; {
+    <span class="comment">// dist[node] = current shortest distance from `start` to `node`
+    </span><span class="kw">let </span><span class="kw-2">mut </span>dist: Vec&lt;<span class="kw">_</span>&gt; = (<span class="number">0</span>..adj_list.len()).map(|<span class="kw">_</span>| usize::MAX).collect();
+
+    <span class="kw">let </span><span class="kw-2">mut </span>heap = TernaryHeap::new();
+
+    <span class="comment">// We're at `start`, with a zero cost
+    </span>dist[start] = <span class="number">0</span>;
+    heap.push(State { cost: <span class="number">0</span>, position: start });
+
+    <span class="comment">// Examine the frontier with lower cost nodes first (min-heap)
+    </span><span class="kw">while let </span><span class="prelude-val">Some</span>(State { cost, position }) = heap.pop() {
+        <span class="comment">// Alternatively we could have continued to find all shortest paths
+        </span><span class="kw">if </span>position == goal { <span class="kw">return </span><span class="prelude-val">Some</span>(cost); }
+
+        <span class="comment">// Important as we may have already found a better way
+        </span><span class="kw">if </span>cost &gt; dist[position] { <span class="kw">continue</span>; }
+
+        <span class="comment">// For each node we can reach, see if we can find a way with
+        // a lower cost going through this node
+        </span><span class="kw">for </span>edge <span class="kw">in </span><span class="kw-2">&amp;</span>adj_list[position] {
+            <span class="kw">let </span>next = State { cost: cost + edge.cost, position: edge.node };
+
+            <span class="comment">// If so, add it to the frontier and continue
+            </span><span class="kw">if </span>next.cost &lt; dist[next.position] {
+                heap.push(next);
+                <span class="comment">// Relaxation, we have now found a better way
+                </span>dist[next.position] = next.cost;
+            }
+        }
+    }
+
+    <span class="comment">// Goal not reachable
+    </span><span class="prelude-val">None
+</span>}
+
+<span class="kw">fn </span>main() {
+    <span class="comment">// This is the directed graph we're going to use.
+    // The node numbers correspond to the different states,
+    // and the edge weights symbolize the cost of moving
+    // from one node to another.
+    // Note that the edges are one-way.
+    //
+    //                  7
+    //          +-----------------+
+    //          |                 |
+    //          v   1        2    |  2
+    //          0 -----&gt; 1 -----&gt; 3 ---&gt; 4
+    //          |        ^        ^      ^
+    //          |        | 1      |      |
+    //          |        |        | 3    | 1
+    //          +------&gt; 2 -------+      |
+    //           10      |               |
+    //                   +---------------+
+    //
+    // The graph is represented as an adjacency list where each index,
+    // corresponding to a node value, has a list of outgoing edges.
+    // Chosen for its efficiency.
+    </span><span class="kw">let </span>graph = <span class="macro">vec!</span>[
+        <span class="comment">// Node 0
+        </span><span class="macro">vec!</span>[Edge { node: <span class="number">2</span>, cost: <span class="number">10 </span>},
+             Edge { node: <span class="number">1</span>, cost: <span class="number">1 </span>}],
+        <span class="comment">// Node 1
+        </span><span class="macro">vec!</span>[Edge { node: <span class="number">3</span>, cost: <span class="number">2 </span>}],
+        <span class="comment">// Node 2
+        </span><span class="macro">vec!</span>[Edge { node: <span class="number">1</span>, cost: <span class="number">1 </span>},
+             Edge { node: <span class="number">3</span>, cost: <span class="number">3 </span>},
+             Edge { node: <span class="number">4</span>, cost: <span class="number">1 </span>}],
+        <span class="comment">// Node 3
+        </span><span class="macro">vec!</span>[Edge { node: <span class="number">0</span>, cost: <span class="number">7 </span>},
+             Edge { node: <span class="number">4</span>, cost: <span class="number">2 </span>}],
+        <span class="comment">// Node 4
+        </span><span class="macro">vec!</span>[]];
+
+    <span class="macro">assert_eq!</span>(shortest_path(<span class="kw-2">&amp;</span>graph, <span class="number">0</span>, <span class="number">1</span>), <span class="prelude-val">Some</span>(<span class="number">1</span>));
+    <span class="macro">assert_eq!</span>(shortest_path(<span class="kw-2">&amp;</span>graph, <span class="number">0</span>, <span class="number">3</span>), <span class="prelude-val">Some</span>(<span class="number">3</span>));
+    <span class="macro">assert_eq!</span>(shortest_path(<span class="kw-2">&amp;</span>graph, <span class="number">3</span>, <span class="number">0</span>), <span class="prelude-val">Some</span>(<span class="number">7</span>));
+    <span class="macro">assert_eq!</span>(shortest_path(<span class="kw-2">&amp;</span>graph, <span class="number">0</span>, <span class="number">4</span>), <span class="prelude-val">Some</span>(<span class="number">5</span>));
+    <span class="macro">assert_eq!</span>(shortest_path(<span class="kw-2">&amp;</span>graph, <span class="number">4</span>, <span class="number">0</span>), <span class="prelude-val">None</span>);
+}</code></pre></div>
+</div></details><h2 id="structs" class="section-header">Structs<a href="#structs" class="anchor">§</a></h2><dl class="item-table"><dt><a class="struct" href="struct.DaryHeap.html" title="struct dary_heap::DaryHeap">Dary<wbr>Heap</a></dt><dd>A priority queue implemented with a <em>d</em>-ary heap.</dd><dt><a class="struct" href="struct.Drain.html" title="struct dary_heap::Drain">Drain</a></dt><dd>A draining iterator over the elements of a <code>DaryHeap</code>.</dd><dt><a class="struct" href="struct.IntoIter.html" title="struct dary_heap::IntoIter">Into<wbr>Iter</a></dt><dd>An owning iterator over the elements of a <code>DaryHeap</code>.</dd><dt><a class="struct" href="struct.Iter.html" title="struct dary_heap::Iter">Iter</a></dt><dd>An iterator over the elements of a <code>DaryHeap</code>.</dd><dt><a class="struct" href="struct.PeekMut.html" title="struct dary_heap::PeekMut">PeekMut</a></dt><dd>Structure wrapping a mutable reference to the greatest item on a
+<code>DaryHeap</code>.</dd></dl><h2 id="types" class="section-header">Type Aliases<a href="#types" class="anchor">§</a></h2><dl class="item-table"><dt><a class="type" href="type.BinaryHeap.html" title="type dary_heap::BinaryHeap">Binary<wbr>Heap</a></dt><dd>A binary heap (<em>d</em> = 2).</dd><dt><a class="type" href="type.OctonaryHeap.html" title="type dary_heap::OctonaryHeap">Octonary<wbr>Heap</a></dt><dd>An octonary heap (<em>d</em> = 8).</dd><dt><a class="type" href="type.QuaternaryHeap.html" title="type dary_heap::QuaternaryHeap">Quaternary<wbr>Heap</a></dt><dd>A quaternary heap (<em>d</em> = 4).</dd><dt><a class="type" href="type.QuinaryHeap.html" title="type dary_heap::QuinaryHeap">Quinary<wbr>Heap</a></dt><dd>A quinary heap (<em>d</em> = 5).</dd><dt><a class="type" href="type.SenaryHeap.html" title="type dary_heap::SenaryHeap">Senary<wbr>Heap</a></dt><dd>A senary heap (<em>d</em> = 6).</dd><dt><a class="type" href="type.SeptenaryHeap.html" title="type dary_heap::SeptenaryHeap">Septenary<wbr>Heap</a></dt><dd>A septenary heap (<em>d</em> = 7).</dd><dt><a class="type" href="type.TernaryHeap.html" title="type dary_heap::TernaryHeap">Ternary<wbr>Heap</a></dt><dd>A ternary heap (<em>d</em> = 3).</dd></dl><script type="text/json" id="notable-traits-data">{"Drain<'_, T>":"<h3>Notable traits for <code><a class=\"struct\" href=\"struct.Drain.html\" title=\"struct dary_heap::Drain\">Drain</a>&lt;'_, T&gt;</code></h3><pre><code><div class=\"where\">impl&lt;T&gt; <a class=\"trait\" href=\"https://doc.rust-lang.org/1.89.0/core/iter/traits/iterator/trait.Iterator.html\" title=\"trait core::iter::traits::iterator::Iterator\">Iterator</a> for <a class=\"struct\" href=\"struct.Drain.html\" title=\"struct dary_heap::Drain\">Drain</a>&lt;'_, T&gt;</div><div class=\"where\">    type <a href=\"https://doc.rust-lang.org/1.89.0/core/iter/traits/iterator/trait.Iterator.html#associatedtype.Item\" class=\"associatedtype\">Item</a> = T;</div>","IntoIter<T>":"<h3>Notable traits for <code><a class=\"struct\" href=\"struct.IntoIter.html\" title=\"struct dary_heap::IntoIter\">IntoIter</a>&lt;T&gt;</code></h3><pre><code><div class=\"where\">impl&lt;T&gt; <a class=\"trait\" href=\"https://doc.rust-lang.org/1.89.0/core/iter/traits/iterator/trait.Iterator.html\" title=\"trait core::iter::traits::iterator::Iterator\">Iterator</a> for <a class=\"struct\" href=\"struct.IntoIter.html\" title=\"struct dary_heap::IntoIter\">IntoIter</a>&lt;T&gt;</div><div class=\"where\">    type <a href=\"https://doc.rust-lang.org/1.89.0/core/iter/traits/iterator/trait.Iterator.html#associatedtype.Item\" class=\"associatedtype\">Item</a> = T;</div>","Iter<'_, T>":"<h3>Notable traits for <code><a class=\"struct\" href=\"struct.Iter.html\" title=\"struct dary_heap::Iter\">Iter</a>&lt;'a, T&gt;</code></h3><pre><code><div class=\"where\">impl&lt;'a, T&gt; <a class=\"trait\" href=\"https://doc.rust-lang.org/1.89.0/core/iter/traits/iterator/trait.Iterator.html\" title=\"trait core::iter::traits::iterator::Iterator\">Iterator</a> for <a class=\"struct\" href=\"struct.Iter.html\" title=\"struct dary_heap::Iter\">Iter</a>&lt;'a, T&gt;</div><div class=\"where\">    type <a href=\"https://doc.rust-lang.org/1.89.0/core/iter/traits/iterator/trait.Iterator.html#associatedtype.Item\" class=\"associatedtype\">Item</a> = <a class=\"primitive\" href=\"https://doc.rust-lang.org/1.89.0/core/primitive.reference.html\">&amp;'a T</a>;</div>"}</script></section></div></main></body></html>

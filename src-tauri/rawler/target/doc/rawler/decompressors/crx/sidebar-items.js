@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["CrxError"],"fn":["decompress_crx_image"],"struct":["CodecParams"]};

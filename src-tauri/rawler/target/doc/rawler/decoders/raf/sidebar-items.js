@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["FujiIFD","RafMakernotes","RafTags"],"fn":["fuji_raw_rotate","is_raf","parse_raf_format"],"struct":["RafDecoder"]};

@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["CompressionMethod","PhotometricInterpretation","PlanarConfiguration","Predictor","PreviewColorSpace","ResolutionUnit","SampleFormat","TiffError"],"mod":["entry","file","ifd","reader","value","writer"],"struct":["DataOffset","DirReader"],"type":["Result"]};

@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["PefMakernote"],"struct":["PefDecoder","PefFormat"]};
